@@ -23,11 +23,10 @@ if not API_KEY:
     logger.warning("GEMINI_API_KEY not found in environment variables.")
 
 # Initialize Gemini Model
-# Initialize Gemini Model with Google Search Grounding
-# Using gemini-2.0-flash as it is stable and supports grounding (gemini-3-flash-preview might be experimental)
-# Note: Google Search Grounding tool requires specific models.
+# Using gemini-2.0-flash
+# Note: Google Search Grounding removed due to stability issues with JSON mode.
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash', tools='google_search_retrieval')
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 app = FastAPI(title="LocalMind AI Backend")
 
@@ -77,7 +76,7 @@ async def analyze(
         INSTRUCTIONS:
         1. Analyze the input (image, audio, text).
         2. Identify specific local details (shops, signs, food, transport, safety).
-        3. If the user asks for a price, give a realistic estimate.
+        3. If the user asks for a price, give a realistic estimate based on general knowledge.
         4. **CRITICAL**: Return your response in strict JSON format.
         
         JSON SCHEMA:
@@ -94,8 +93,6 @@ async def analyze(
             ]
         }}
         
-        Use Google Search to find real coordinates if needed.
-        
         USER INPUT:
         {user_text}
         """
@@ -108,30 +105,44 @@ async def analyze(
         
         inputs.append(formatted_prompt)
 
-
+        # 2. Process Image
+        if image:
+            content = await image.read()
+            try:
+                img = Image.open(io.BytesIO(content))
+                inputs.append(img)
+            except Exception as e:
+                logger.error(f"Image processing failed: {e}")
+                raise HTTPException(status_code=400, detail="Invalid image file.")
+        
+        # 3. Process Audio
+        if audio:
+            audio_content = await audio.read()
+            # Gemini supports audio via inline data mainly for small clips or File API for larger.
+            # For 1.5/2.0 Flash, we can send raw data if mime type is supported (mp3, wav, aac, etc).
+            # Expo Audio Recording is usually m4a (audio/mp4) or caf. Gemini accepts these.
+            inputs.append({
+                "mime_type": audio.content_type or "audio/mp4",
+                "data": audio_content
+            })
 
         # 4. Call Gemini
         logger.info(f"Sending request to Gemini... Location: {location}, Audio: {bool(audio)}")
         
-        # NOTE: Google Search Grounding is INCOMPATIBLE with response_mime_type="application/json"
-        # We must request plain text and rely on the Prompt to enforce JSON structure.
-        response = model.generate_content(inputs)
+        # Use strict JSON mode (supported when tools are NOT used)
+        response = model.generate_content(
+            inputs,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json"
+            )
+        )
         
-        responseText = response.text
-        
-        # Clean up code blocks if present (Gemini might wrap JSON in ```json ... ```)
-        if responseText.startswith("```"):
-            responseText = responseText.strip().split("\n", 1)[-1] # Remove first line
-            if responseText.endswith("```"):
-                responseText = responseText[:-3] # Remove last line
-            
         try:
-            response_json = json.loads(responseText)
+            response_json = json.loads(response.text)
         except json.JSONDecodeError:
-            logger.error(f"JSON Parse Error: {responseText}")
-            # Fallback if model fails to output valid JSON
+            logger.error(f"JSON Parse Error: {response.text}")
             response_json = {
-                "response": responseText, # Return the raw text as the answer
+                "response": "Error processing response.", 
                 "show_map": False, 
                 "locations": []
             }
