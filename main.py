@@ -23,9 +23,11 @@ if not API_KEY:
     logger.warning("GEMINI_API_KEY not found in environment variables.")
 
 # Initialize Gemini Model
-# Using gemini-2.0-flash as 1.5 is not available for this key/region
+# Initialize Gemini Model with Google Search Grounding
+# Using gemini-2.0-flash as it is stable and supports grounding (gemini-3-flash-preview might be experimental)
+# Note: Google Search Grounding tool requires specific models.
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-3-flash-preview')
+model = genai.GenerativeModel('gemini-2.0-flash', tools='google_search_retrieval')
 
 app = FastAPI(title="LocalMind AI Backend")
 
