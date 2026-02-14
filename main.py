@@ -26,7 +26,7 @@ if not API_KEY:
 # Using gemini-2.0-flash
 # Note: Google Search Grounding removed due to stability issues with JSON mode.
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash')
+model = genai.GenerativeModel('gemini-3-flash-preview')
 
 app = FastAPI(title="LocalMind AI Backend")
 
