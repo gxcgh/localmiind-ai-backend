@@ -1,7 +1,8 @@
 import requests
 import sys
 
-BASE_URL = "http://localhost:8000"
+# Allow overriding URL via command line arg
+BASE_URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
 
 def test_health():
     try:
