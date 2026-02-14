@@ -25,7 +25,7 @@ if not API_KEY:
 # Initialize Gemini Model
 # Using gemini-2.0-flash as 1.5 is not available for this key/region
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash')
+model = genai.GenerativeModel('gemini-3-flash-preview')
 
 app = FastAPI(title="LocalMind AI Backend")
 
