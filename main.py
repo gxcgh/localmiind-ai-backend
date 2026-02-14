@@ -112,19 +112,29 @@ async def analyze(
 
         # 4. Call Gemini
         logger.info(f"Sending request to Gemini... Location: {location}, Audio: {bool(audio)}")
-        # Request JSON response format
-        response = model.generate_content(
-            inputs,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json"
-            )
-        )
         
+        # NOTE: Google Search Grounding is INCOMPATIBLE with response_mime_type="application/json"
+        # We must request plain text and rely on the Prompt to enforce JSON structure.
+        response = model.generate_content(inputs)
+        
+        responseText = response.text
+        
+        # Clean up code blocks if present (Gemini might wrap JSON in ```json ... ```)
+        if responseText.startswith("```"):
+            responseText = responseText.strip().split("\n", 1)[-1] # Remove first line
+            if responseText.endswith("```"):
+                responseText = responseText[:-3] # Remove last line
+            
         try:
-            response_json = json.loads(response.text)
+            response_json = json.loads(responseText)
         except json.JSONDecodeError:
-            # Fallback if model fails to output JSON (rare with response_mime_type)
-            response_json = {"response": response.text, "show_map": False, "locations": []}
+            logger.error(f"JSON Parse Error: {responseText}")
+            # Fallback if model fails to output valid JSON
+            response_json = {
+                "response": responseText, # Return the raw text as the answer
+                "show_map": False, 
+                "locations": []
+            }
         
         # 5. Return formatted response
         return JSONResponse(content={
