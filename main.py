@@ -46,19 +46,20 @@ async def health_check():
 async def analyze(
     text: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
+    audio: Optional[UploadFile] = File(None),
     location: Optional[str] = Form(None), # Expected format: "lat,long" or "City, Area"
     language_code: str = Form("en") # e.g., 'hi', 'en', 'te'
 ):
     """
     Multimodal analysis endpoint.
-    Accepts Text (optional), Image (optional), Location (required for best results).
+    Accepts Text (optional), Image (optional), Audio (optional), Location (required for best results).
     """
     try:
         if not API_KEY:
              raise HTTPException(status_code=500, detail="Server misconfiguration: API Key missing.")
         
-        if not text and not image:
-            raise HTTPException(status_code=400, detail="Either text or image must be provided.")
+        if not text and not image and not audio:
+            raise HTTPException(status_code=400, detail="Either text, image, or audio must be provided.")
 
         inputs = []
         
@@ -72,7 +73,7 @@ async def analyze(
         - User's Language Preference: {language_code} (Respond in this language OR English if unsure, but prefer mixed/colloquial if appropriate like Hinglish).
         
         INSTRUCTIONS:
-        1. Analyze the input (image and/or text).
+        1. Analyze the input (image, audio, text).
         2. Identify specific local details (shops, signs, food, transport, safety).
         3. Provide estimated prices, safety tips, or transport options if relevant.
         4. Be CONCISE and ACTIONABLE. No long wiki-style answers.
@@ -85,7 +86,7 @@ async def analyze(
         formatted_prompt = base_prompt.format(
             location=location or "Unknown India Location",
             language_code=language_code,
-            user_text=text or "Analyze this image."
+            user_text=text or "Analyze my input."
         )
         
         inputs.append(formatted_prompt)
@@ -93,22 +94,31 @@ async def analyze(
         # 2. Process Image
         if image:
             content = await image.read()
-            image_part = {"mime_type": image.content_type, "data": content}
-            # Or use PIL to verify it's an image
             try:
                 img = Image.open(io.BytesIO(content))
                 inputs.append(img)
             except Exception as e:
                 logger.error(f"Image processing failed: {e}")
                 raise HTTPException(status_code=400, detail="Invalid image file.")
+        
+        # 3. Process Audio
+        if audio:
+            audio_content = await audio.read()
+            # Gemini supports audio via inline data mainly for small clips or File API for larger.
+            # For 1.5/2.0 Flash, we can send raw data if mime type is supported (mp3, wav, aac, etc).
+            # Expo Audio Recording is usually m4a (audio/mp4) or caf. Gemini accepts these.
+            inputs.append({
+                "mime_type": audio.content_type or "audio/mp4",
+                "data": audio_content
+            })
 
-        # 3. Call Gemini
-        logger.info(f"Sending request to Gemini... Location: {location}")
+        # 4. Call Gemini
+        logger.info(f"Sending request to Gemini... Location: {location}, Audio: {bool(audio)}")
         response = model.generate_content(inputs)
         
         response_text = response.text
         
-        # 4. Return formatted response
+        # 5. Return formatted response
         return JSONResponse(content={
             "response": response_text,
             "location_context": location
